@@ -34,7 +34,10 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
         appliances.extend([HonBaseOnOff(hass, coordinator, entry, appliance)])
 
         if device.has("doorStatus"):
-            appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "doorStatus", "Door status", BinarySensorDeviceClass.DOOR)])
+            if appliance["applianceTypeId"] == APPLIANCE_TYPE.DISH_WASHER:
+                appliances.extend([HonBaseDishWasherDoorStatus(hass, coordinator, entry, appliance)])
+            else:
+                appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "doorStatus", "Door status", BinarySensorDeviceClass.DOOR)])
         if device.has("defrostStatus"):
             appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "defrostStatus", "Defrost status", BinarySensorDeviceClass.RUNNING)])
 
@@ -129,6 +132,15 @@ class HonBaseOnOff(HonBaseBinarySensorEntity):
             self._attr_is_on = self._device.get("onOffStatus") == "1"
         else:
             self._attr_is_on = self._device.get("attributes.lastConnEvent.category") == "CONNECTED"
+
+class HonBaseDishWasherDoorStatus(HonBaseBinarySensorEntity):
+    # Dish washers report doorStatus "1" when the door is closed and "0" when it is open (inverted compared to other appliances)
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "doorStatus", "Door status")
+        self._attr_device_class = BinarySensorDeviceClass.DOOR
+
+    def coordinator_update(self):
+        self._attr_is_on = self._device.get("doorStatus") == "0"
 
 class HonBaseDoorStatus(HonBaseBinarySensorEntity):
     def __init__(self, hass, coordinator, entry, appliance, zone, zone_name) -> None:
