@@ -11,11 +11,14 @@ from homeassistant.components.switch import SwitchEntityDescription, SwitchEntit
 from homeassistant.core import callback
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from .const import DOMAIN, APPLIANCE_DEFAULT_NAME
 from .command import HonCommand
 
 _LOGGER = logging.getLogger(__name__)
+
+# Statistics (programsCounter, ...) come from a separate endpoint, refresh them less often than the context
+STATISTICS_INTERVAL = timedelta(minutes=30)
 
 class HonBaseCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, hon, appliance):
@@ -29,6 +32,7 @@ class HonBaseCoordinator(DataUpdateCoordinator):
         self._hon       = hon
         self._device    = None
         self._appliance = appliance
+        self._statistics_at = None
 
         try:
             self._mac           = appliance["macAddress"]
@@ -45,11 +49,27 @@ class HonBaseCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         #data = await self._hon.async_get_context(self._device)
         await self._device.load_context()
+        await self._refresh_statistics()
 
         #data = await self._hon.async_get_state(self._mac, self._type_name)
         #if( self._device != None ):
         #    self._device.load_context(data)
         #return data
+
+    async def _refresh_statistics(self):
+        # Statistics are loaded once at setup; without a refresh the counters stay frozen until a restart
+        now = datetime.now(timezone.utc)
+        if self._statistics_at is None:
+            if self._device.statistics:
+                self._statistics_at = now
+            return
+        if now - self._statistics_at < STATISTICS_INTERVAL:
+            return
+        self._statistics_at = now
+        try:
+            await self._device.load_statistics()
+        except Exception as err:
+            _LOGGER.debug("Unable to refresh statistics for %s: %s", self._name, err)
 
     @property
     def device(self):

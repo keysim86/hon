@@ -213,6 +213,10 @@ class HonConnection:
             return data.get("payload", {})
 
     async def load_statistics(self, device):
+
+        # Refresh the CIAM session before it expires
+        await self._ensure_session()
+
         params = {
             "macAddress": device.mac_address,
             "applianceType": device.appliance_type
