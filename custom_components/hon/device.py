@@ -320,7 +320,30 @@ class HonDevice(CoordinatorEntity):
                     self._commands[command] = cmd
 
     async def load_statistics(self):
-        self._statistics = await self._hon.load_statistics(self)
+        # Keep the last statistics when a refresh comes back empty
+        self._statistics = await self._hon.load_statistics(self) or self._statistics
+
+    def program_positions(self):
+        """Map prPosition -> program name, taken from the startProgram programs."""
+        result = {}
+        command = self._commands.get("startProgram")
+        if command is None:
+            return result
+        for name, program in command.get_programs().items():
+            position = program.parameters.get("prPosition")
+            if position is not None and str(position.value) not in ("", "0"):
+                result[str(position.value)] = name
+        return result
+
+    def program_counters(self):
+        """Run counters per program: context parameters program1..programN, one per prPosition."""
+        result = {}
+        names = self.program_positions()
+        i = 1
+        while self.has(f"program{i}"):
+            result[names.get(str(i), f"program{i}")] = self.getInt(f"program{i}")
+            i += 1
+        return result
 
     @property
     def device_info(self):

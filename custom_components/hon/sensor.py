@@ -209,6 +209,12 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
         if device.get("statistics.programsCounter") is not None:
             appliances.extend([HonBaseProgramsCounter(hass, coordinator, entry, appliance)])
 
+        # DW run counters per program (context parameters program1..programN), refreshed with the context
+        if appliance["applianceTypeId"] == APPLIANCE_TYPE.DISH_WASHER and device.has("program1"):
+            appliances.extend([HonBaseProgramCycles(hass, coordinator, entry, appliance)])
+            if HonBaseCareCycles.care_program(device):
+                appliances.extend([HonBaseCareCycles(hass, coordinator, entry, appliance)])
+
        # Induction Hob (HAISJ64MC) settings
         for i in range(1, 5):
             if device.has(f"powerZ{i}"):
@@ -715,6 +721,41 @@ class HonBaseProgramsCounter(HonBaseSensorEntity):
         value = self._device.get("statistics.programsCounter")
         if value is not None:
             self._attr_native_value = int(value)
+
+
+class HonBaseProgramCycles(HonBaseSensorEntity):
+    """Sum of the per-program run counters; the counters per program are in the attributes."""
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "programCycles", "Cycles")
+
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_icon = "mdi:counter"
+
+    def coordinator_update(self):
+        counters = self._device.program_counters()
+        if counters:
+            self._attr_native_value = sum(counters.values())
+            self._attr_extra_state_attributes = {name: count for name, count in counters.items() if count}
+
+
+class HonBaseCareCycles(HonBaseSensorEntity):
+    """Runs of the machine care (self-cleaning / descaling) program."""
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "careCycles", "Care cycles")
+
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_icon = "mdi:dishwasher-alert"
+
+    @staticmethod
+    def care_program(device):
+        return next((name for name in device.program_positions().values() if "care" in name), None)
+
+    def coordinator_update(self):
+        name = self.care_program(self._device)
+        counters = self._device.program_counters()
+        if name in counters:
+            self._attr_native_value = counters[name]
+            self._attr_extra_state_attributes = {"program": name}
 
 
 class HonBaseCurrentWashCycle(HonBaseSensorEntity):
